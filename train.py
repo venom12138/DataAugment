@@ -64,7 +64,8 @@ parser.add_argument('--changing_lr', type=int, nargs="+", default=[80, 120])
 
 parser.add_argument('--stage', type=int, default=None)  # None: baseline
 parser.add_argument('--aux_config', type=str, default=None)
-
+parser.add_argument('--mix_epoch', type=int, default=10000, help = 'train stage within mixepoch then train all stages')
+parser.add_argument('--mix_mode', type=str, default='', help = 'stochastic or optim')
 args = parser.parse_args()
 
 # Configurations adopted for training deep networks.
@@ -161,6 +162,17 @@ def main():
         start_time = time.time()
         adjust_learning_rate(optimizer, epoch + 1)
 
+        if epoch == args.mix_epoch:
+            if args.mix_mode == 'random':
+                model.stage = None
+            elif args.mix_mode == 'optim':
+                optim_checkpoint = torch.load(args.optim_ckpt)
+                if epoch != 0:
+                    checkpoint = torch.load(exp.save_dir+'/checkpoint.pth.tar')
+                model.load_state_dict(optim_checkpoint['state_dict'], strict=False)#aux_classifier出问题
+                if epoch != 0:
+                    model.load_state_dict(checkpoint['state_dict'], strict=False)
+                model.stage = None
         # train for one epoch
         train_metrics = train(train_loader, model, ce_criterion, optimizer, epoch)
 
@@ -311,9 +323,20 @@ def adjust_learning_rate(optimizer, epoch):
                 param_group['lr'] *= training_configurations[args.model]['lr_decay_rate']
 
     else:
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = 0.5 * training_configurations[args.model]['initial_learning_rate']\
-                                * (1 + math.cos(math.pi * epoch / training_configurations[args.model]['epochs']))
+        if args.mix_epoch < training_configurations[args.model]['epochs']:
+            if epoch < args.mix_epoch:
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = 0.5 * training_configurations[args.model]['initial_learning_rate']\
+                                        * (1 + math.cos(math.pi * epoch / args.mix_epoch))
+            else:
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = 0.5 * training_configurations[args.model]['initial_learning_rate']\
+                                        * (1 + math.cos(math.pi * (epoch-args.mix_epoch) / (training_configurations[args.model]['epochs']-args.mix_epoch)))
+        else:
+            for param_group in optimizer.param_groups:
+                    param_group['lr'] = 0.5 * training_configurations[args.model]['initial_learning_rate']\
+                                        * (1 + math.cos(math.pi * epoch / training_configurations[args.model]['epochs']))
+       
 
 
 def accuracy(output, target, topk=(1,)):
