@@ -463,7 +463,7 @@ class ResNet_Cifar(nn.Module):
             output = self.fc(x)
 
         return output
-
+    #pop掉了没有被train的参数
     def state_dict(self, destination=None, prefix='', keep_vars=False):
         state_dict = nn.Module.state_dict(self)
         keys = list(state_dict.keys())
